@@ -53,7 +53,10 @@
 #include "sha1.h"
 #include "util.h"
 
-#define MODULE_NAME   "pam_google_authenticator"
+// Module name shortened to work with rsyslog.
+// See https://github.com/google/google-authenticator-libpam/issues/172
+#define MODULE_NAME   "pam_google_auth"
+
 #define SECRET        "~/.google_authenticator"
 #define CODE_PROMPT   "Verification code: "
 #define PWCODE_PROMPT "Password & verification code: "
@@ -338,7 +341,7 @@ static int setuser(int uid) {
 }
 
 static int setgroup(int gid) {
-#ifdef HAS_SETFSUID
+#ifdef HAVE_SETFSGID
   // The semantics of setfsgid() are a little unusual. On success, the
   // previous group id is returned. On failure, the current groupd id is
   // returned.
@@ -621,6 +624,7 @@ static int write_file_contents(pam_handle_t *pamh,
     struct stat sb;
     if (stat(secret_filename, &sb) != 0) {
       err = errno;
+      log_message(LOG_ERR, pamh, "stat(): %s", strerror(err));
       goto cleanup;
     }
 
@@ -637,19 +641,40 @@ static int write_file_contents(pam_handle_t *pamh,
 
   // Write the new file contents.
   if ((err = full_write(fd, buf, strlen(buf)))) {
+    log_message(LOG_ERR, pamh, "write(): %s", strerror(err));
     goto cleanup;
   }
   if (fsync(fd)) {
     err = errno;
+    log_message(LOG_ERR, pamh, "fsync(): %s", strerror(err));
     goto cleanup;
   }
   if (close(fd)) {
     err = errno;
+    log_message(LOG_ERR, pamh, "close(): %s", strerror(err));
     goto cleanup;
   }
   fd = -1; // Prevent double-close.
+
+  // Double-check that the file size is correct.
+  {
+    struct stat st;
+    if (stat(tmp_filename, &st)) {
+      err = errno;
+      log_message(LOG_ERR, pamh, "stat(%s): %s", tmp_filename, strerror(err));
+      goto cleanup;
+    }
+    const off_t want = strlen(buf);
+    if (st.st_size == 0 || (want != st.st_size)) {
+      err = EAGAIN;
+      log_message(LOG_ERR, pamh, "temp file size %d. Should be non-zero and %d", st.st_size, want);
+      goto cleanup;
+    }
+  }
+  
   if (rename(tmp_filename, secret_filename) != 0) {
     err = errno;
+    log_message(LOG_ERR, pamh, "rename(): %s", strerror(err));
     goto cleanup;
   }
   free(tmp_filename);

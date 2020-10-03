@@ -1,5 +1,5 @@
 AC_PREREQ(2.61)
-AC_INIT(google-authenticator, 1.08, habets@google.com)
+AC_INIT(google-authenticator, 1.09, habets@google.com)
 AC_CONFIG_SRCDIR([src/google-authenticator.c])
 AC_CONFIG_AUX_DIR([build])
 AC_CONFIG_MACRO_DIR([build])
@@ -21,6 +21,7 @@ AC_CHECK_HEADERS([sys/fsuid.h])
 AC_CHECK_FUNCS([ \
 	explicit_bzero \
 	setfsuid \
+	setfsgid \
 ])
 
 AC_CHECK_HEADERS_ONCE([security/pam_appl.h])
